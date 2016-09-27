@@ -33,7 +33,7 @@ import Control.Concurrent             ( newEmptyMVar, putMVar, takeMVar, MVar )
 import Control.Exception              ( onException, evaluate )
 import Control.Monad.State            ( runState )
 import Control.Monad                  ( join )
-import Control.Applicative            ( (<$>), (<*>) )
+--import Control.Applicative            ( (<$>), (<*>) )
 import Data.ByteString.Lazy           ( ByteString )
 import qualified Data.ByteString.Lazy as Lazy ( length )
 

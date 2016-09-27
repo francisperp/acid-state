@@ -222,13 +222,23 @@ makeEventHandler eventName eventType
                       ]
 
 
+#if MIN_VERSION_template_haskell(2,11,0)
 notStrictBang :: Q Bang
 notStrictBang = bang noSourceUnpackedness noSourceStrictness
+
+makeStrictType :: Q Bang -> TypeQ -> BangTypeQ
+makeStrictType = bangType
+#else
+notStrictBang :: Q Strict
+notStrictBang = notStrict
+makeStrictType :: Q Strict -> TypeQ -> StrictTypeQ
+makeStrictType = strictType
+#endif
 --data MyUpdateEvent = MyUpdateEvent Arg1 Arg2
 --  deriving (Typeable)
 makeEventDataType :: Name -> Type -> DecQ
 makeEventDataType eventName eventType
-    = do let con = normalC eventStructName [ bangType notStrictBang (return arg) | arg <- args ]
+    = do let con = normalC eventStructName [ makeStrictType notStrictBang (return arg) | arg <- args ]
 #if MIN_VERSION_template_haskell(2,11,0)
              cxtC = mapM conT [''Typeable]
 #else
