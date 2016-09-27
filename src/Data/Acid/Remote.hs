@@ -93,7 +93,7 @@ module Data.Acid.Remote
     , processRemoteState
     ) where
 
-import Prelude                                hiding ( catch )
+import Prelude
 import Control.Concurrent.STM                        ( atomically )
 import Control.Concurrent.STM.TMVar                  ( newEmptyTMVar, readTMVar, takeTMVar, tryTakeTMVar, putTMVar )
 import Control.Concurrent.STM.TQueue
@@ -113,20 +113,20 @@ import Data.ByteString.Char8                         ( pack )
 import qualified Data.ByteString.Lazy                as Lazy
 import Data.IORef                                    ( newIORef, readIORef, writeIORef )
 import Data.Serialize
-import Data.SafeCopy                                 ( SafeCopy, safeGet, safePut )
+import Data.SafeCopy                                 ( safeGet, safePut )
 import Data.Set                                      ( Set, member )
 import Data.Typeable                                 ( Typeable )
 import GHC.IO.Exception                              ( IOErrorType(..) )
 import Network                                       ( HostName, PortID(..), connectTo, listenOn, withSocketsDo )
-import Network.Socket                                ( Socket, accept, sClose )
+import Network.Socket                                ( Socket, accept, close )
 import Network.Socket.ByteString                     ( recv, sendAll )
 import System.Directory                              ( removeFile )
 import System.IO                                     ( Handle, hPrint, hFlush, hClose, stderr )
 import System.IO.Error                               ( ioeGetErrorType, isFullError, isDoesNotExistError )
 
 debugStrLn :: String -> IO ()
-debugStrLn s =
-    do -- putStrLn s -- uncomment to enable debugging
+debugStrLn _s =
+    do -- putStrLn _s -- uncomment to enable debugging
        return ()
 
 -- | 'CommChannel' is a record containing the IO functions we need for communication between the server and client.
@@ -164,7 +164,7 @@ socketToCommChannel :: Socket -> CommChannel
 socketToCommChannel socket =
     CommChannel { ccPut     = sendAll socket
                 , ccGetSome = recv    socket
-                , ccClose   = sClose  socket
+                , ccClose   = close  socket
                 }
 
 {- | skip server-side authentication checking entirely. -}
@@ -216,8 +216,7 @@ sharedSecretPerform pw cc =
 
      see also: 'openRemoteState' and 'sharedSecretCheck'.
  -}
-acidServer :: SafeCopy st =>
-              (CommChannel -> IO Bool) -- ^ check authentication, see 'sharedSecretPerform'
+acidServer :: (CommChannel -> IO Bool) -- ^ check authentication, see 'sharedSecretPerform'
            -> PortID                   -- ^ Port to listen on
            -> AcidState st             -- ^ state to serve
            -> IO ()
@@ -227,7 +226,7 @@ acidServer checkAuth port acidState
        (acidServer' checkAuth listenSocket acidState) `finally` (cleanup listenSocket)
     where
       cleanup socket =
-          do sClose socket
+          do close socket
              case port of
 #if !defined(mingw32_HOST_OS) && !defined(cygwin32_HOST_OS) && !defined(_WIN32)
                UnixSocket path -> removeFile path
@@ -239,8 +238,7 @@ acidServer checkAuth port acidState
      Can be useful when fine-tuning of socket binding parameters is needed
      (for example, listening on a particular network interface, IPv4/IPv6 options).
  -}
-acidServer' :: SafeCopy st =>
-              (CommChannel -> IO Bool) -- ^ check authentication, see 'sharedSecretPerform'
+acidServer' :: (CommChannel -> IO Bool) -- ^ check authentication, see 'sharedSecretPerform'
            -> Socket                   -- ^ binded socket to accept connections from
            -> AcidState st             -- ^ state to serve
            -> IO ()
@@ -281,8 +279,8 @@ data Command = RunQuery (Tagged Lazy.ByteString)
 
 instance Serialize Command where
   put cmd = case cmd of
-              RunQuery query   -> do putWord8 0; put query
-              RunUpdate update -> do putWord8 1; put update
+              RunQuery quer   -> do putWord8 0; put quer
+              RunUpdate upd -> do putWord8 1; put upd
               CreateCheckpoint ->    putWord8 2
               CreateArchive    ->    putWord8 3
   get = do tag <- getWord8
@@ -311,14 +309,13 @@ instance Serialize Response where
 
      This function is generally only needed if you are adding a new communication channel.
 -}
-process :: SafeCopy st =>
-           CommChannel  -- ^ a connected, authenticated communication channel
+process :: CommChannel  -- ^ a connected, authenticated communication channel
         -> AcidState st -- ^ state to share
         -> IO ()
 process CommChannel{..} acidState
   = do chan <- newChan
-       forkIO $ forever $ do response <- join (readChan chan)
-                             ccPut (encode response)
+       _ <- forkIO $ forever $ do response <- join (readChan chan)
+                                  ccPut (encode response)
        worker chan (runGetPartial get Strict.empty)
   where worker chan inp
           = case inp of
@@ -331,10 +328,10 @@ process CommChannel{..} acidState
               Done cmd rest -> do processCommand chan cmd; worker chan (runGetPartial get rest)
         processCommand chan cmd =
           case cmd of
-            RunQuery query -> do result <- queryCold acidState query
-                                 writeChan chan (return $ Result result)
-            RunUpdate update -> do result <- scheduleColdUpdate acidState update
-                                   writeChan chan (liftM Result $ takeMVar result)
+            RunQuery quer -> do result <- queryCold acidState quer
+                                writeChan chan (return $ Result result)
+            RunUpdate upd -> do result <- scheduleColdUpdate acidState upd
+                                writeChan chan (liftM Result $ takeMVar result)
             CreateCheckpoint -> do createCheckpoint acidState
                                    writeChan chan (return Acknowledgement)
             CreateArchive -> do createArchive acidState
@@ -393,7 +390,7 @@ processRemoteState reconnect
                   case mCallback of
                     Nothing         -> return ()
                     (Just callback) ->
-                        do callback ConnectionError
+                        do _ <- callback ConnectionError
                            expireQueue listenQueue
 
            handleReconnect :: SomeException -> IO ()
@@ -504,8 +501,8 @@ scheduleRemoteUpdate (RemoteState fn _shutdown) event
   = do let encoded = runPutLazy (safePut event)
        parsed <- newEmptyMVar
        respRef <- fn (RunUpdate (methodTag event, encoded))
-       forkIO $ do Result resp <- takeMVar respRef
-                   putMVar parsed (case runGetLazyFix safeGet resp of
+       _ <- forkIO $ do Result resp <- takeMVar respRef
+                        putMVar parsed (case runGetLazyFix safeGet resp of
                                       Left msg -> error msg
                                       Right result -> result)
        return parsed
@@ -514,8 +511,8 @@ scheduleRemoteColdUpdate :: RemoteState st -> Tagged Lazy.ByteString -> IO (MVar
 scheduleRemoteColdUpdate (RemoteState fn _shutdown) event
   = do parsed <- newEmptyMVar
        respRef <- fn (RunUpdate event)
-       forkIO $ do Result resp <- takeMVar respRef
-                   putMVar parsed resp
+       _ <- forkIO $ do Result resp <- takeMVar respRef
+                        putMVar parsed resp
        return parsed
 
 closeRemoteState :: RemoteState st -> IO ()
@@ -531,7 +528,7 @@ createRemoteArchive (RemoteState fn _shutdown)
   = do Acknowledgement <- takeMVar =<< fn CreateArchive
        return ()
 
-toAcidState :: IsAcidic st => RemoteState st -> AcidState st
+toAcidState :: RemoteState st -> AcidState st
 toAcidState remote
   = AcidState { _scheduleUpdate    = scheduleRemoteUpdate remote
               , scheduleColdUpdate = scheduleRemoteColdUpdate remote

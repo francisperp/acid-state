@@ -97,14 +97,14 @@ openFileLog identifier = do
                      , logThreads     = [tid2] }
   if null logFiles
      then do let currentEntryId = 0
-             handle <- open (logDirectory identifier </> formatLogFile (logPrefix identifier) currentEntryId)
-             putMVar currentState handle
+             handl <- open (logDirectory identifier </> formatLogFile (logPrefix identifier) currentEntryId)
+             putMVar currentState handl
      else do let (lastFileEntryId, lastFilePath) = maximum logFiles
              entries <- readEntities lastFilePath
              let currentEntryId = lastFileEntryId + length entries
              atomically $ writeTVar nextEntryRef currentEntryId
-             handle <- open (logDirectory identifier </> formatLogFile (logPrefix identifier) currentEntryId)
-             putMVar currentState handle
+             handl <- open (logDirectory identifier </> formatLogFile (logPrefix identifier) currentEntryId)
+             putMVar currentState handl
   return fLog
 
 fileWriter :: MVar FHandle -> TVar ([Lazy.ByteString], [IO ()]) -> ThreadId -> IO ()
@@ -132,21 +132,21 @@ repack = worker
 
 writeToDisk :: FHandle -> [Strict.ByteString] -> IO ()
 writeToDisk _ [] = return ()
-writeToDisk handle xs = do
+writeToDisk handl xs = do
   mapM_ worker xs
-  flush handle
+  flush handl
  where
   worker bs = do
     let len = Strict.length bs
-    count <- Strict.unsafeUseAsCString bs $ \ptr -> write handle (castPtr ptr) (fromIntegral len)
+    count <- Strict.unsafeUseAsCString bs $ \ptr -> write handl (castPtr ptr) (fromIntegral len)
     when (fromIntegral count < len) $
        worker (Strict.drop (fromIntegral count) bs)
 
 
 closeFileLog :: FileLog object -> IO ()
 closeFileLog fLog =
-  modifyMVar_ (logCurrent fLog) $ \handle -> do
-    close handle
+  modifyMVar_ (logCurrent fLog) $ \handl -> do
+    close handl
     _ <- forkIO $ forM_ (logThreads fLog) killThread
     return $ error "FileLog has been closed"
 
@@ -164,7 +164,7 @@ ensureLeastEntryId fLog youngestEntry = do
   atomically $ do
     entryId <- readTVar (logNextEntryId fLog)
     writeTVar (logNextEntryId fLog) (max entryId youngestEntry)
-  cutFileLog fLog
+  _ <- cutFileLog fLog
   return ()
 
 -- Read all durable entries younger than the given EntryId.
@@ -194,7 +194,7 @@ readEntriesFrom fLog youngestEntry = do
   rangeStart (firstEntryId, _path) = firstEntryId
 
 -- Obliterate log entries younger than or equal to the EventId. Very unsafe, can't be undone
-rollbackTo :: SafeCopy object => LogKey object -> EntryId -> IO ()
+rollbackTo :: LogKey object -> EntryId -> IO ()
 rollbackTo identifier youngestEntry = do
   logFiles <- findLogFiles identifier
   let sorted = sort logFiles
@@ -312,7 +312,7 @@ newestEntry identifier = do
       Next entry next -> return $ Just (decode' (lastEntry entry next))
       Fail msg        -> error msg
   lastEntry entry Done          = entry
-  lastEntry entry (Fail msg)    = error msg
+  lastEntry _entry (Fail msg)    = error msg
   lastEntry _ (Next entry next) = lastEntry entry next
 
 -- Schedule a new log entry. This call does not block

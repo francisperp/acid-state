@@ -88,8 +88,8 @@ openAcidState initialState
 
 -- | Execute the 'Update' monad in a pure environment.
 runUpdate :: Update s r -> s -> (r, s)
-runUpdate update = runState $ unUpdate update
+runUpdate upd = runState $ unUpdate upd
 
 -- | Execute the 'Query' monad in a pure environment.
 runQuery :: Query s r -> s -> r
-runQuery query = runReader $ unQuery query
+runQuery quer = runReader $ unQuery quer

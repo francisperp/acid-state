@@ -18,7 +18,7 @@ import Control.Monad.Reader
 import Data.ByteString.Lazy  ( ByteString )
 import Data.SafeCopy
 import Data.Serialize        ( Get, runGet, runGetLazy )
-import Control.Applicative
+import Control.Applicative()
 import qualified Data.ByteString as Strict
 
 -- Silly fix for bug in cereal-0.3.3.0's version of runGetLazy.

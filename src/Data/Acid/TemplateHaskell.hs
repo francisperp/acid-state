@@ -11,11 +11,11 @@ import Data.Acid.Core
 import Data.Acid.Common
 
 import Data.List ((\\), nub)
-import Data.Maybe (mapMaybe)
+--import Data.Maybe (mapMaybe)
 import Data.SafeCopy
 import Data.Typeable
 import Data.Char
-import Control.Applicative
+--import Control.Applicative
 import Control.Monad
 
 {-| Create the control structures required for acid states
@@ -94,7 +94,8 @@ getEventType eventName
 
 --instance (SafeCopy key, Typeable key, SafeCopy val, Typeable val) => IsAcidic State where
 --  acidEvents = [ UpdateEvent (\(MyUpdateEvent arg1 arg2 -> myUpdateEvent arg1 arg2) ]
-makeIsAcidic eventNames stateName tyvars constructors
+makeIsAcidic :: [Name] -> Name -> [TyVarBndr] -> t -> Q Dec
+makeIsAcidic eventNames stateName tyvars _constructors
     = do types <- mapM getEventType eventNames
          stateType' <- stateType
          let preds = [ ''SafeCopy, ''Typeable ]
@@ -146,11 +147,11 @@ eventCxts :: Type        -- ^ State type (used for error messages)
           -> Type        -- ^ 'Type' of the event
           -> [Pred]      -- ^ extra context to add to 'IsAcidic' instance
 eventCxts targetStateType targetTyVars eventName eventType =
-    let (_tyvars, cxt, _args, stateType, _resultType, _isUpdate)
+    let (_tyvars, cxtC, _args, stateType, _resultType, _isUpdate)
                     = analyseType eventName eventType
         eventTyVars = findTyVars stateType -- find the type variable names that this event is using for the State type
         table       = zip eventTyVars (map tyVarBndrName targetTyVars) -- create a lookup table
-    in map (unify table) cxt -- rename the type variables
+    in map (unify table) cxtC -- rename the type variables
     where
       -- | rename the type variables in a Pred
       unify :: [(Name, Name)] -> Pred -> Pred
@@ -163,25 +164,25 @@ eventCxts targetStateType targetTyVars eventName eventType =
 
       -- | rename the type variables in a Type
       rename :: Pred -> [(Name, Name)] -> Type -> Type
-      rename pred table t@(ForallT tyvarbndrs cxt typ) = -- this is probably wrong? I don't think acid-state can really handle this type anyway..
-          ForallT (map renameTyVar tyvarbndrs) (map (unify table) cxt) (rename pred table typ)
+      rename predi table _t@(ForallT tyvarbndrs cxtC typ) = -- this is probably wrong? I don't think acid-state can really handle this type anyway..
+          ForallT (map renameTyVar tyvarbndrs) (map (unify table) cxtC) (rename predi table typ)
           where
-            renameTyVar (PlainTV name)    = PlainTV  (renameName pred table name)
-            renameTyVar (KindedTV name k) = KindedTV (renameName pred table name) k
-      rename pred table (VarT n)   = VarT $ renameName pred table n
-      rename pred table (AppT a b) = AppT (rename pred table a) (rename pred table b)
-      rename pred table (SigT a k) = SigT (rename pred table a) k
+            renameTyVar (PlainTV name)    = PlainTV  (renameName predi table name)
+            renameTyVar (KindedTV name k) = KindedTV (renameName predi table name) k
+      rename predi table (VarT n)   = VarT $ renameName predi table n
+      rename predi table (AppT a b) = AppT (rename predi table a) (rename predi table b)
+      rename predi table (SigT a k) = SigT (rename predi table a) k
       rename _    _     typ        = typ
 
       -- | rename a 'Name'
       renameName :: Pred -> [(Name, Name)] -> Name -> Name
-      renameName pred table n =
+      renameName predI table n =
           case lookup n table of
             Nothing -> error $ unlines [ show $ ppr_sig eventName eventType
                                        , ""
                                        , "can not be used as an UpdateEvent because the class context: "
                                        , ""
-                                       , pprint pred
+                                       , pprint predI
                                        , ""
                                        , "contains a type variable which is not found in the state type: "
                                        , ""
@@ -221,23 +222,25 @@ makeEventHandler eventName eventType
                       ]
 
 
-
+notStrictBang :: Q Bang
+notStrictBang = bang noSourceUnpackedness noSourceStrictness
 --data MyUpdateEvent = MyUpdateEvent Arg1 Arg2
 --  deriving (Typeable)
+makeEventDataType :: Name -> Type -> DecQ
 makeEventDataType eventName eventType
-    = do let con = normalC eventStructName [ strictType notStrict (return arg) | arg <- args ]
+    = do let con = normalC eventStructName [ bangType notStrictBang (return arg) | arg <- args ]
 #if MIN_VERSION_template_haskell(2,11,0)
-             cxt = mapM conT [''Typeable]
+             cxtC = mapM conT [''Typeable]
 #else
-             cxt = [''Typeable]
+             cxtC = [''Typeable]
 #endif
          case args of
 #if MIN_VERSION_template_haskell(2,11,0)
-          [_] -> newtypeD (return []) eventStructName tyvars Nothing con cxt
-          _   -> dataD (return []) eventStructName tyvars Nothing [con] cxt
+          [_] -> newtypeD (return []) eventStructName tyvars Nothing con cxtC
+          _   -> dataD (return []) eventStructName tyvars Nothing [con] cxtC
 #else
-          [_] -> newtypeD (return []) eventStructName tyvars con cxt
-          _   -> dataD (return []) eventStructName tyvars [con] cxt
+          [_] -> newtypeD (return []) eventStructName tyvars con cxtC
+          _   -> dataD (return []) eventStructName tyvars [con] cxtC
 #endif
     where (tyvars, _cxt, args, _stateType, _resultType, _isUpdate) = analyseType eventName eventType
           eventStructName = mkName (structName (nameBase eventName))
@@ -247,12 +250,13 @@ makeEventDataType eventName eventType
 -- instance (SafeCopy key, SafeCopy val) => SafeCopy (MyUpdateEvent key val) where
 --    put (MyUpdateEvent a b) = do put a; put b
 --    get = MyUpdateEvent <$> get <*> get
+makeSafeCopyInstance :: Name -> Type -> Q Dec
 makeSafeCopyInstance eventName eventType
     = do let preds = [ ''SafeCopy ]
              ty = AppT (ConT ''SafeCopy) (foldl AppT (ConT eventStructName) (map VarT (allTyVarBndrNames tyvars)))
 
              getBase = appE (varE 'return) (conE eventStructName)
-             getArgs = foldl (\a b -> infixE (Just a) (varE '(<*>)) (Just (varE 'safeGet))) getBase args
+             getArgs = foldl (\a _b -> infixE (Just a) (varE '(<*>)) (Just (varE 'safeGet))) getBase args
              contained val = varE 'contain `appE` val
 
          putVars <- replicateM (length args) (newName "arg")
@@ -270,8 +274,9 @@ makeSafeCopyInstance eventName eventType
           structName [] = []
           structName (x:xs) = toUpper x : xs
 
+mkCxtFromTyVars :: [Name] -> [TyVarBndr] -> [Type] -> CxtQ
 mkCxtFromTyVars preds tyvars extraContext
-    = cxt $ [ classP classPred [varT tyvar] | tyvar <- allTyVarBndrNames tyvars, classPred <- preds ] ++
+    = cxt $ [ appT (conT classPred) (varT tyvar) | tyvar <- allTyVarBndrNames tyvars, classPred <- preds ] ++
             map return extraContext
 
 {-
@@ -280,11 +285,12 @@ instance (SafeCopy key, Typeable key
   type MethodResult (MyUpdateEvent key val) = Return
   type MethodState (MyUpdateEvent key val) = State key val
 -}
+makeMethodInstance :: Name -> Type -> DecQ
 makeMethodInstance eventName eventType
     = do let preds = [ ''SafeCopy, ''Typeable ]
              ty = AppT (ConT ''Method) (foldl AppT (ConT eventStructName) (map VarT (allTyVarBndrNames tyvars)))
              structType = foldl appT (conT eventStructName) (map varT (allTyVarBndrNames tyvars))
-         instanceD (cxt $ [ classP classPred [varT tyvar] | tyvar <- allTyVarBndrNames tyvars, classPred <- preds ] ++ map return context)
+         instanceD (cxt $ [ appT (conT classPred) (varT tyvar) | tyvar <- allTyVarBndrNames tyvars, classPred <- preds ] ++ map return context)
                    (return ty)
 #if __GLASGOW_HASKELL__ >= 707
                    [ tySynInstD ''MethodResult (tySynEqn [structType] (return resultType))
@@ -301,11 +307,12 @@ makeMethodInstance eventName eventType
 
 --instance (SafeCopy key, Typeable key
 --         ,SafeCopy val, Typeable val) => UpdateEvent (MyUpdateEvent key val)
+makeEventInstance :: Name -> Type -> DecQ
 makeEventInstance eventName eventType
     = do let preds = [ ''SafeCopy, ''Typeable ]
              eventClass = if isUpdate then ''UpdateEvent else ''QueryEvent
              ty = AppT (ConT eventClass) (foldl AppT (ConT eventStructName) (map VarT (allTyVarBndrNames tyvars)))
-         instanceD (cxt $ [ classP classPred [varT tyvar] | tyvar <- allTyVarBndrNames tyvars, classPred <- preds ] ++ map return context)
+         instanceD (cxt $ [ appT (conT classPred) (varT tyvar) | tyvar <- allTyVarBndrNames tyvars, classPred <- preds ] ++ map return context)
                    (return ty)
                    []
     where (tyvars, context, _args, _stateType, _resultType, isUpdate) = analyseType eventName eventType
@@ -317,20 +324,20 @@ makeEventInstance eventName eventType
 -- (tyvars, cxt, args, state type, result type, is update)
 analyseType :: Name -> Type -> ([TyVarBndr], Cxt, [Type], Type, Type, Bool)
 analyseType eventName t
-    = let (tyvars, cxt, t') = case t of
-                                ForallT binds [] t' ->
-                                  (binds, [], t')
-                                ForallT binds cxt t' ->
-                                  (binds, cxt, t')
+    = let (tyvars, cxtT, t') = case t of
+                                ForallT binds [] t'' ->
+                                  (binds, [], t'')
+                                ForallT binds cxt' t'' ->
+                                  (binds, cxt', t'')
                                 _ -> ([], [], t)
           args = getArgs t'
           (stateType, resultType, isUpdate) = findMonad t'
-      in (tyvars, cxt, args, stateType, resultType, isUpdate)
+      in (tyvars, cxtT, args, stateType, resultType, isUpdate)
     where getArgs ForallT{} = error $ "Event has an invalid type signature: Nested forall: " ++ show eventName
           getArgs (AppT (AppT ArrowT a) b) = a : getArgs b
           getArgs _ = []
 
-          findMonad (AppT (AppT ArrowT a) b)
+          findMonad (AppT (AppT ArrowT _) b)
               = findMonad b
           findMonad (AppT (AppT (ConT con) state) result)
               | con == ''Update = (state, result, True)

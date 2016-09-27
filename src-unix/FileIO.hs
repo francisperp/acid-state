@@ -33,7 +33,7 @@ open :: FilePath -> IO FHandle
 open filename = fmap FHandle $ openFd filename WriteOnly (Just stdFileMode) defaultFileFlags
 
 write :: FHandle -> Ptr Word8 -> Word32 -> IO Word32
-write (FHandle fd) data' length = fmap fromIntegral $ fdWriteBuf fd data' $ fromIntegral length
+write (FHandle fd) data' len = fmap fromIntegral $ fdWriteBuf fd data' $ fromIntegral len
 
 -- Handle error values?
 flush :: FHandle -> IO ()

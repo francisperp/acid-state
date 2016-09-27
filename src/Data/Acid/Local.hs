@@ -87,7 +87,7 @@ scheduleLocalUpdate acidState event
 
          -- It is important that we encode the event now so that we can catch
          -- any exceptions (see nestedStateError in examples/errors/Exceptions.hs)
-         evaluate (Lazy.length encoded)
+         _ <- evaluate (Lazy.length encoded)
 
          modifyCoreState_ (localCore acidState) $ \st ->
            do let !(result, !st') = runState hotMethod st
@@ -110,7 +110,7 @@ scheduleLocalUpdate' acidState event mvar
 
          -- It is important that we encode the event now so that we can catch
          -- any exceptions (see nestedStateError in examples/errors/Exceptions.hs)
-         evaluate (Lazy.length encoded)
+         _ <- evaluate (Lazy.length encoded)
 
          act <- modifyCoreState (localCore acidState) $ \st ->
            do let !(result, !st') = runState hotMethod st
@@ -179,7 +179,7 @@ localQueryCold acidState event
 --   This call will not return until the operation has succeeded.
 createLocalCheckpoint :: SafeCopy st => LocalState st -> IO ()
 createLocalCheckpoint acidState
-    = do cutFileLog (localEvents acidState)
+    = do _ <- cutFileLog (localEvents acidState)
          mvar <- newEmptyMVar
          withCoreState (localCore acidState) $ \st ->
            do eventId <- askCurrentEntryId (localEvents acidState)
@@ -317,7 +317,7 @@ resumeLocalStateFrom directory initialState delayLocking =
                                       , localCheckpoints = checkpointsLog
                                       , localLock = lock
                                       }
-
+checkpointRestoreError :: [Char] -> a
 checkpointRestoreError msg
     = error $ "Could not parse saved checkpoint due to the following error: " ++ msg
 

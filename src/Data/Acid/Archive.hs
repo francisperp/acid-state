@@ -82,11 +82,11 @@ getLazyByteString_fast :: Int -> Get Lazy.ByteString
 getLazyByteString_fast = worker 0 []
   where
     worker counter acc n = do
-      rem <- remaining
-      if n > rem then do
-         chunk <- getBytes rem
+      remain <- remaining
+      if n > remain then do
+         chunk <- getBytes remain
          _ <- ensure 1
-         worker (counter + rem) (chunk:acc) (n-rem)
+         worker (counter + remain) (chunk:acc) (n-remain)
       else do
          chunk <- getBytes n
          return $ Lazy.fromChunks (reverse $ chunk:acc)

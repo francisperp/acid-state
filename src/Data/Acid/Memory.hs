@@ -24,7 +24,7 @@ import Data.ByteString.Lazy           ( ByteString )
 import Data.Typeable                  ( Typeable )
 import Data.IORef                     ( IORef, newIORef, readIORef, writeIORef )
 
-import Data.SafeCopy                  ( SafeCopy(..) )
+import Data.SafeCopy                  ( )
 
 
 {-| State container offering full ACID (Atomicity, Consistency, Isolation and Durability)
@@ -103,13 +103,13 @@ memoryQueryCold acidState event
     where coldMethod = lookupColdMethod (localCore acidState) event
 
 -- | This is a nop with the memory backend.
-createMemoryCheckpoint :: SafeCopy st => MemoryState st -> IO ()
-createMemoryCheckpoint acidState
+createMemoryCheckpoint :: MemoryState st -> IO ()
+createMemoryCheckpoint _acidState
     = return ()
 
 -- | This is a nop with the memory backend.
-createMemoryArchive :: SafeCopy st => MemoryState st -> IO ()
-createMemoryArchive acidState
+createMemoryArchive :: MemoryState st -> IO ()
+createMemoryArchive _acidState
     = return ()
 
 -- | Close an AcidState and associated logs.
@@ -118,7 +118,7 @@ closeMemoryState :: MemoryState st -> IO ()
 closeMemoryState acidState
     = closeCore (localCore acidState)
 
-toAcidState :: IsAcidic st => MemoryState st -> AcidState st
+toAcidState :: MemoryState st -> AcidState st
 toAcidState memory
   = AcidState { _scheduleUpdate    = scheduleMemoryUpdate memory
               , scheduleColdUpdate = scheduleMemoryColdUpdate memory
