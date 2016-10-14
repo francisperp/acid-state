@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fno-warn-orphans#-}
 module Benchmark.Model where
 
 import Benchmark.Prelude hiding (insert)

@@ -2,6 +2,7 @@
 {- Holy crap this code is messy. -}
 module Data.Acid.TemplateHaskell
     ( makeAcidic
+    , makeAcidicWithExtraHandlers
     ) where
 
 import Language.Haskell.TH
@@ -92,6 +93,7 @@ getEventType eventName
              -> return eventType
            _ -> error $ "Events must be functions: " ++ show eventName
 
+
 --instance (SafeCopy key, Typeable key, SafeCopy val, Typeable val) => IsAcidic State where
 --  acidEvents = [ UpdateEvent (\(MyUpdateEvent arg1 arg2 -> myUpdateEvent arg1 arg2) ]
 makeIsAcidic :: [Name] -> Name -> [TyVarBndr] -> t -> Q Dec
@@ -106,6 +108,54 @@ makeIsAcidic eventNames stateName tyvars _constructors
          instanceD (return cxts') ty
                    [ valD (varP 'acidEvents) (normalB (listE handlers)) [] ]
     where stateType = foldl appT (conT stateName) (map varT (allTyVarBndrNames tyvars))
+
+
+
+makeAcidicWithExtraHandlers :: Name -> [Name] -> [Exp] -> Q [Dec]
+makeAcidicWithExtraHandlers stateName eventNames extraExps
+    = do stateInfo <- reify stateName
+         case stateInfo of
+           TyConI tycon
+             ->case tycon of
+#if MIN_VERSION_template_haskell(2,11,0)
+                 DataD _cxt _name tyvars _kind constructors _derivs
+#else
+                 DataD _cxt _name tyvars constructors _derivs
+#endif
+                   -> makeAcidicWithExtraHandlers' eventNames stateName tyvars constructors extraExps
+#if MIN_VERSION_template_haskell(2,11,0)
+                 NewtypeD _cxt _name tyvars _kind constructor _derivs
+#else
+                 NewtypeD _cxt _name tyvars constructor _derivs
+#endif
+                   -> makeAcidicWithExtraHandlers' eventNames stateName tyvars [constructor] extraExps
+                 TySynD _name tyvars _ty
+                   -> makeAcidicWithExtraHandlers' eventNames stateName tyvars [] extraExps
+                 _ -> error "Unsupported state type. Only 'data', 'newtype' and 'type' are supported."
+           _ -> error "Given state is not a type."
+
+makeAcidicWithExtraHandlers' :: [Name] -> Name -> [TyVarBndr] -> [Con] -> [Exp] -> Q [Dec]
+makeAcidicWithExtraHandlers' eventNames stateName tyvars constructors extraExps
+    = do events <- sequence [ makeEvent eventName | eventName <- eventNames ]
+         acidic <- makeIsAcidicWithExtraHandlers eventNames stateName tyvars constructors extraExps
+         return $ acidic : concat events
+
+
+--instance (SafeCopy key, Typeable key, SafeCopy val, Typeable val) => IsAcidic State where
+--  acidEvents = [ UpdateEvent (\(MyUpdateEvent arg1 arg2 -> myUpdateEvent arg1 arg2) ]
+makeIsAcidicWithExtraHandlers :: [Name] -> Name -> [TyVarBndr] -> t -> [Exp] -> Q Dec
+makeIsAcidicWithExtraHandlers eventNames stateName tyvars _constructors extraExps
+    = do types <- mapM getEventType eventNames
+         stateType' <- stateType
+         let preds = [ ''SafeCopy, ''Typeable ]
+             ty = appT (conT ''IsAcidic) stateType
+             handlers = (zipWith makeEventHandler eventNames types) ++ (map return extraExps)
+             cxtFromEvents = nub $ concat $ zipWith (eventCxts stateType' tyvars) eventNames types
+         cxts' <- mkCxtFromTyVars preds tyvars cxtFromEvents
+         instanceD (return cxts') ty
+                   [ valD (varP 'acidEvents) (normalB (listE handlers)) [] ]
+    where stateType = foldl appT (conT stateName) (map varT (allTyVarBndrNames tyvars))
+
 
 -- | This function analyses an event function and extracts any
 -- additional class contexts which need to be added to the IsAcidic

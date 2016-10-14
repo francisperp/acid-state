@@ -1,5 +1,5 @@
-module Benchmark.FileSystem 
-  ( 
+module Benchmark.FileSystem
+  (
     copy,
     removeTreeIfExists,
     exists,
@@ -13,7 +13,7 @@ import Benchmark.Prelude hiding (stripPrefix, last)
 import Filesystem.Path.CurrentOS
 import Filesystem
 import qualified System.Directory as Directory
-import Debug.Trace
+--import Debug.Trace
 import qualified Data.List as List
 
 
@@ -26,11 +26,11 @@ removeTreeIfExists path = removeTree path `catch` \e -> case e of
 exists :: FilePath -> IO Bool
 exists path = do
   isDir <- isDirectory path
-  isFile <- isFile path
-  return $ isDir || isFile 
+  isF <- isFile path
+  return $ isDir || isF
 
 getTemporaryDirectory :: IO FilePath
-getTemporaryDirectory = 
+getTemporaryDirectory =
   Directory.getTemporaryDirectory >>= return . decodeString
 
 copy :: FilePath -> FilePath -> IO ()
@@ -45,10 +45,10 @@ copyDirectory path path' = do
   members <- listDirectory path
   let members' = do
         member <- members
-        let relative = 
+        let rel =
               fromMaybe (error "Unexpectedly empty member path") $
               last member
-        return $ path' <> relative
+        return $ path' <> rel
   sequence_ $ zipWith copy members members'
 
 last :: FilePath -> Maybe FilePath
