@@ -23,7 +23,15 @@ Source-repository head
   location:      https://github.com/acid-state/acid-state
 
 Library
-  Exposed-Modules:     Data.Acid,
+  if impl (ghcjs)
+    Exposed-Modules:   Data.Acid,
+                       Data.Acid.Local, Data.Acid.Memory,
+                       Data.Acid.Memory.Pure,
+                       Data.Acid.Advanced,
+                       Data.Acid.Log, Data.Acid.CRC,
+                       Data.Acid.Abstract, Data.Acid.Core
+  else
+    Exposed-Modules:   Data.Acid,
                        Data.Acid.Local, Data.Acid.Memory,
                        Data.Acid.Memory.Pure, Data.Acid.Remote,
                        Data.Acid.Advanced,
@@ -34,7 +42,21 @@ Library
                        Paths_acid_state,
                        Data.Acid.TemplateHaskell, Data.Acid.Common, FileIO
 
-  Build-depends:       array,
+  if impl (ghcjs)
+    Build-depends:     array,
+                       base >= 4 && < 5,
+                       bytestring >= 0.10.2,
+                       cereal >= 0.4.1.0,
+                       containers,
+                       extensible-exceptions,
+                       safecopy >= 0.6,
+                       stm >= 2.4,
+                       directory,
+                       filepath,
+                       mtl,
+                       template-haskell
+  else
+    Build-depends:     array,
                        base >= 4 && < 5,
                        bytestring >= 0.10.2,
                        cereal >= 0.4.1.0,
@@ -47,7 +69,6 @@ Library
                        mtl,
                        network,
                        template-haskell
-
   if os(windows)
      Build-depends:       Win32
   else
