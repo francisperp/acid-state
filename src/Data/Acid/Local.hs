@@ -330,9 +330,9 @@ closeLocalState acidState
          closeFileLog (localCheckpoints acidState)
          releasePrefixLock (localLock acidState)
 
-createLocalArchive :: LocalState st -> IO ()
+{-createLocalArchive :: LocalState st -> IO ()
 createLocalArchive = createLocalArchiveWithPath Nothing
-
+-}
 
 createLocalArchiveWithPath :: Maybe FilePath -> LocalState st -> IO ()
 createLocalArchiveWithPath mPath state
@@ -361,7 +361,7 @@ toAcidState local
               , _query = localQuery local
               , queryCold = localQueryCold local
               , createCheckpoint = createLocalCheckpoint local
-              , createArchive = createLocalArchive local
+              , createArchive = flip createLocalArchiveWithPath $ local
               , closeAcidState = closeLocalState local
               , acidSubState = mkAnyState local
               }

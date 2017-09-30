@@ -334,7 +334,7 @@ process CommChannel{..} acidState
                                 writeChan chan (liftM Result $ takeMVar result)
             CreateCheckpoint -> do createCheckpoint acidState
                                    writeChan chan (return Acknowledgement)
-            CreateArchive -> do createArchive acidState
+            CreateArchive -> do createArchive acidState $ Nothing
                                 writeChan chan (return Acknowledgement)
 
 data RemoteState st = RemoteState (Command -> IO (MVar Response)) (IO ())
@@ -535,7 +535,7 @@ toAcidState remote
               , _query             = remoteQuery remote
               , queryCold          = remoteQueryCold remote
               , createCheckpoint   = createRemoteCheckpoint remote
-              , createArchive      = createRemoteArchive remote
+              , createArchive      = const $ createRemoteArchive remote
               , closeAcidState     = closeRemoteState remote
               , acidSubState       = mkAnyState remote
               }

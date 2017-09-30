@@ -64,7 +64,7 @@ data AcidState st
 --   has been thrown out.
 --
 --   This method is idempotent and does not block the normal operation of the AcidState.
-              , createArchive :: IO ()
+              , createArchive :: Maybe FilePath -> IO ()
               ,
 -- | Close an AcidState and associated resources.
 --   Any subsequent usage of the AcidState will throw an exception.
