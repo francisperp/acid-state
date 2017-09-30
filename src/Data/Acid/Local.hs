@@ -331,7 +331,11 @@ closeLocalState acidState
          releasePrefixLock (localLock acidState)
 
 createLocalArchive :: LocalState st -> IO ()
-createLocalArchive state
+createLocalArchive = createLocalArchiveWithPath Nothing
+
+
+createLocalArchiveWithPath :: Maybe FilePath -> LocalState st -> IO ()
+createLocalArchiveWithPath mPath state
   = do -- We need to look at the last checkpoint saved to disk. Since checkpoints can be written
        -- in parallel with this call, we can't guarantee that the checkpoint we get really is the
        -- last one but that's alright.
@@ -345,10 +349,10 @@ createLocalArchive state
          (Checkpoint entryId _content : _)
            -> do -- 'entryId' is the lowest entryId that didn't contribute to the checkpoint.
                  -- 'archiveFileLog' moves all files that are lower than this entryId to the archive.
-                 archiveFileLog (localEvents state) entryId
+                 archiveFileLogWithPath mPath (localEvents state) entryId
                  -- In the same style as above, we archive all log files that came before the log file
                  -- which contains our checkpoint.
-                 archiveFileLog (localCheckpoints state) durableCheckpointId
+                 archiveFileLogWithPath mPath (localCheckpoints state) durableCheckpointId
 
 toAcidState :: IsAcidic st => LocalState st -> AcidState st
 toAcidState local

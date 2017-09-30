@@ -18,6 +18,7 @@ module Data.Acid.Log
     , askCurrentEntryId
     , cutFileLog
     , archiveFileLog
+    , archiveFileLogWithPath
     ) where
 
 import Data.Acid.Archive as Archive
@@ -258,7 +259,11 @@ filterLogFiles minEntryIdMb maxEntryIdMb logFiles = worker logFiles
 -- Move all log files that do not contain entries equal or higher than the given entryId
 -- into an Archive/ directory.
 archiveFileLog :: FileLog object -> EntryId -> IO ()
-archiveFileLog fLog entryId = do
+archiveFileLog = archiveFileLogWithPath Nothing
+
+archiveFileLogWithPath :: Maybe FilePath -> FileLog object -> EntryId -> IO ()
+archiveFileLogWithPath mArchiveDir fLog entryId = do
+  let archiveDir = fromMaybe (logDirectory (logIdentifier fLog) </> "Archive") mArchiveDir
   logFiles <- findLogFiles (logIdentifier fLog)
   let sorted = sort logFiles
       relevant = filterLogFiles Nothing (Just entryId) sorted \\
@@ -267,8 +272,7 @@ archiveFileLog fLog entryId = do
   createDirectoryIfMissing True archiveDir
   forM_ relevant $ \(_startEntry, logFilePath) ->
     renameFile logFilePath (archiveDir </> takeFileName logFilePath)
- where
-  archiveDir = logDirectory (logIdentifier fLog) </> "Archive"
+
 
 getNextDurableEntryId :: FileLog object -> IO EntryId
 getNextDurableEntryId fLog  = atomically $ do
